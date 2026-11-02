@@ -38,11 +38,33 @@ def sha256(path: Path = CACHE) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def drop_bad_prints(raw: pd.DataFrame, jump: float = 0.25, back: float = 0.05, max_days: int = 3) -> tuple[pd.DataFrame, list]:
+    """Remove quotes that jump more than `jump` and come back to within `back` of the last good price within
+    `max_days` quotes: data errors, not market moves. Yahoo has two in this window: NIFTYBEES at about a tenth of its
+    price on 19-20 December 2019, and CPER for one day in February 2015. A real crash does not come back."""
+    raw = raw.copy()
+    removed = []
+    for column in raw.columns:
+        s = raw[column].dropna()
+        values, i = s.to_numpy(), 1
+        while i < len(values):
+            if abs(values[i] / values[i - 1] - 1) > jump:
+                for j in range(1, max_days + 1):
+                    if i + j < len(values) and abs(values[i + j] / values[i - 1] - 1) < back:
+                        removed += [(column, str(d.date())) for d in s.index[i: i + j]]
+                        raw.loc[s.index[i: i + j], column] = np.nan
+                        i += j
+                        break
+            i += 1
+    return raw, removed
+
+
 def to_inr_weekdays(raw: pd.DataFrame) -> pd.DataFrame:
     """Weekday calendar, each series carried forward from its own last quote (never backward), dollar assets
     converted to rupees with that day's USD/INR."""
     raw = raw.copy()
     raw.index = pd.to_datetime(raw.index)
+    raw, _ = drop_bad_prints(raw)
     days = pd.bdate_range(raw.index.min(), raw.index.max())
     weekday = raw.reindex(raw.index.union(days)).ffill().reindex(days)
     fx = weekday[config.FX_TICKER]

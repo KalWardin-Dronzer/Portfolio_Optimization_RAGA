@@ -153,3 +153,12 @@ def test_sharpe_annualisation() -> None:
     assert metrics.sharpe(r) == pytest.approx(expected)
     diff, lo, hi = metrics.block_bootstrap_sharpe_diff(r, r, n_boot=50)
     assert diff == 0 and lo == pytest.approx(0) and hi == pytest.approx(0)
+
+
+def test_bad_prints_are_removed_but_real_crashes_are_kept() -> None:
+    days = pd.bdate_range("2019-12-16", periods=8)
+    raw = pd.DataFrame({"A": [127.5, 128.6, 129.3, 13.0, 13.0, 129.9, 130.1, 130.5],   # a bad print for two days
+                        "B": [100, 100, 60, 61, 60, 62, 61, 60.0]}, index=days)      # a crash that stays down
+    cleaned, removed = data.drop_bad_prints(raw)
+    assert removed == [("A", "2019-12-19"), ("A", "2019-12-20")]
+    assert cleaned["B"].equals(raw["B"])
