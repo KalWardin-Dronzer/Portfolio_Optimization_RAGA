@@ -53,7 +53,12 @@ def to_inr_weekdays(raw: pd.DataFrame) -> pd.DataFrame:
     prices = weekday[config.TICKERS].copy()
     dollar = [t for t in config.TICKERS if t not in config.INDIA]
     prices[dollar] = prices[dollar].mul(fx, axis=0)
-    return prices
+    # Start on the first day every asset quoted from the outset has a price. The download starts on 1 January, a
+    # holiday in some markets; starting there made a window "missing" a day for those assets, which then counted
+    # as not yet listed at the first rebalance.
+    firsts = prices.apply(lambda s: s.first_valid_index())
+    early = firsts[firsts <= prices.index[0] + pd.Timedelta(days=30)]
+    return prices.loc[early.max():]
 
 
 def load(path: Path = CACHE) -> pd.DataFrame:

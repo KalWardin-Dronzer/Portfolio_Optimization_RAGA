@@ -126,16 +126,25 @@ def test_leverage_pays_the_cash_rate() -> None:
     assert book.returns.iloc[-1] < book.returns.iloc[1] < 0
 
 
-def test_no_back_filling_before_the_first_quote() -> None:
+def test_dollar_assets_are_converted_to_rupees() -> None:
     raw = pd.DataFrame(
         {t: [10.0, 11.0, 12.0] for t in T} | {config.FX_TICKER: [80.0, 81.0, 82.0]},
         index=pd.to_datetime(["2020-01-06", "2020-01-07", "2020-01-08"]),
     )
-    raw.loc["2020-01-06", "ETH-USD"] = np.nan
     prices = data.to_inr_weekdays(raw)
-    assert np.isnan(prices.loc["2020-01-06", "ETH-USD"])
     assert prices.loc["2020-01-07", "SPY"] == pytest.approx(11.0 * 81.0)  # dollar assets in rupees
     assert prices.loc["2020-01-07", "TCS.NS"] == pytest.approx(11.0)
+
+
+def test_a_holiday_on_the_first_day_does_not_drop_an_asset() -> None:
+    days = pd.bdate_range("2015-01-01", periods=40)
+    raw = pd.DataFrame({t: np.linspace(10, 20, 40) for t in T} | {config.FX_TICKER: np.full(40, 80.0)}, index=days)
+    raw.iloc[0, [T.index("SPY"), T.index("TLT")]] = np.nan  # a US holiday on the first day
+    raw.iloc[:30, T.index("ETH-USD")] = np.nan  # listed weeks later
+    prices = data.to_inr_weekdays(raw)
+    assert prices.index[0] == days[1]
+    assert data.eligible(prices)[T.index("SPY")] and not data.eligible(prices)[T.index("ETH-USD")]
+    assert prices["ETH-USD"].iloc[:28].isna().all()  # never back-filled before its first quote
 
 
 def test_sharpe_annualisation() -> None:
